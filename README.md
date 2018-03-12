@@ -17,5 +17,5 @@
 ## DICE in Python
 (forthcoming)
 
-## Comparative runs of DICE models
+## Comparative runs of different versions of DICE model
 (forthcoming)
