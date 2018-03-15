@@ -16,6 +16,11 @@
 
 # RStudio files
 .Rproj.user/
+*.Rproj
+
+# some HTML
+README.html
+temp*
 
 # produced vignettes
 vignettes/*.html
@@ -31,3 +36,16 @@ vignettes/*.pdf
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
+.Rproj.user
+
+# GAMS output
+*.gpr
+*.log
+*.lst
+*.lxi
+*.put
+*.csv
+*.gdx
+*.~*
+*.xls
+*.xlsx

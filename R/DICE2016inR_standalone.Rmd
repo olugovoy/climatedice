@@ -1,0 +1,1253 @@
+---
+title: "DICE2016inR"
+author: "olugovoy"
+date: "12/26/2017"
+output:
+  pdf_document:
+    fig_caption: yes
+    toc: yes
+    toc_depth: 5
+  word_document:
+    fig_caption: yes
+    toc: yes
+  html_document:
+    toc: yes
+toc: yes
+---
+
+# An R-version of DICE2016 model, with step-by-step translation from GAMS
+
+This is a _standalone_ R-version of DICE2016 model, with (commented) original GAMS-code lines, folowed by R-interpretation. This R-version of the model reproduces identical results to the GAMS version (excluding some minor differences at the end of the model horizon, which are behind normaly reported analyses, based on the model, and can be ignored).
+
+
+```{r Prerequisites, include=FALSE}
+# Loading (installing if nessesary) required packages
+install_required_pkgs <- TRUE
+install_optional_pkgs <- FALSE # not needed in this version
+ipkgs <- rownames(installed.packages())
+
+## Solvers ####
+## 1. NlcOptim (required)
+# So far "NlcOptim" is the best option for problems with nonlinear constrains, 
+# required in the code to solve the model with constrains on temperature.
+if (!("NlcOptim" %in% ipkgs) & install_required_pkgs) install.packages("NlcOptim")
+library(NlcOptim)
+## 2. BB (optional)
+# Can solve boxed-constrained nonlinear problems (i.e. with bounds on 
+# control variables, which is MIU and S in the model) 
+
+if (!("tidyverse" %in% ipkgs)) install.packages("tidyverse")
+library(tidyverse)
+
+
+if(install_optional_pkgs) {
+  if (!("NlcOptim" %in% ipkgs)) install.packages("NlcOptim")
+  if (!("numDeriv" %in% ipkgs)) install.packages("numDeriv")
+  if (!("BB" %in% ipkgs)) install.packages("BB")
+  if (!("nloptr" %in% ipkgs)) install.packages("nloptr")
+  if (!("DEoptim" %in% ipkgs)) install.packages("DEoptim")
+  if (!("DEoptimR" %in% ipkgs)) install.packages("DEoptimR")
+#  if (!("ipoptr" %in% ipkgs)) install.packages("ipoptr")
+#  if (!("Rsolnp" %in% ipkgs)) install.packages("Rsolnp")
+}
+
+
+```
+
+<!-- 'DICE-2016R-091916ap.gms' starts here -->
+<!-- $ontext -->
+<!-- This is the beta version of DICE-2016R. The major changes are outlined in Nordhaus, -->
+<!-- "Revisiting the social cost of carbon: Estimates from the DICE-2016R model," -->
+<!-- September 30, 2016," available from the author. -->
+
+<!-- Version is DICE-2016R-091916ap.gms -->
+<!-- $offtext -->
+
+<!-- $title        DICE-2016R September 2016 (DICE-2016R-091216a.gms) -->
+
+## Model SETs and PARAMETERs  
+```{r Sets_and_Parameters, eval=TRUE, include=TRUE}
+#set        
+t <- 1:100 #  Time periods (5 years per period)                    /1*100/
+NT <- length(t) # Total number of periods for convenience
+
+#PARAMETERS
+#** Availability of fossil fuels
+        fosslim <- 6000 # Maximum cumulative extraction fossil fuels (GtC)  /6000/
+#**Time Step
+        tstep  <- 5 #  Years per Period                                  /5/
+#** If optimal control
+        ifopt  <- 0 #  Indicator where optimized is 1 and base is 0      /0/
+#** Preferences
+        elasmu <- 1.45 #  Elasticity of marginal utility of consumption     /1.45 /
+        prstp <- 0.015 #   Initial rate of social time preference per year   /.015/
+#** Population and technology
+        gama  <- .300 #   Capital elasticity in production function         /.300 /
+        pop0  <- 7403   # Initial world population 2015 (millions)          /7403 /
+        popadj <- 0.134 #  Growth rate to calibrate to 2050 pop projection  /0.134/
+        popasym <- 11500 # Asymptotic population (millions)                 /11500/
+        dk  <- .100 #     Depreciation rate on capital (per year)           /.100 /
+        q0  <- 105.5 #     Initial world gross output 2015 (trill 2010 USD) /105.5/
+        k0  <- 223 #     Initial capital value 2015 (trill 2010 USD)        /223  /
+        a0  <- 5.115 #     Initial level of total factor productivity       /5.115/
+        ga0  <- 0.076 #    Initial growth rate for TFP per 5 years          /0.076/
+        dela  <- 0.005 #   Decline rate of TFP per 5 years                  /0.005/
+#** Emissions parameters
+        gsigma1  <- -0.0152 # Initial growth of sigma (per year)            /-0.0152/
+        dsig  <- -0.001 #   Decline rate of decarbonization (per period)    /-0.001 /
+        eland0 <- 2.6 #  Carbon emissions from land 2015 (GtCO2 per year)   / 2.6   /
+        deland <- .115 # Decline rate of land emissions (per period)        / .115  /
+        e0   <- 35.85 #    Industrial emissions 2015 (GtCO2 per year)       /35.85  /
+        miu0  <- .03 #   Initial emissions control rate for base case 2015  /.03    /
+#** Carbon cycle
+#* Initial Conditions
+        mat0 <- 851 #  Initial Concentration in atmosphere 2015 (GtC)       /851  /
+        mu0  <- 460 #  Initial Concentration in upper strata 2015 (GtC)     /460  /
+        ml0  <- 1740 #  Initial Concentration in lower strata 2015 (GtC)    /1740 /
+        mateq <- 588 # mateq Equilibrium concentration atmosphere  (GtC)    /588  /
+        mueq  <- 360 # mueq Equilibrium concentration in upper strata (GtC) /360  /
+        mleq <- 1720 # mleq Equilibrium concentration in lower strata (GtC) /1720 /
+#* Flow paramaters
+        b12  <- .12 #    Carbon cycle transition matrix                     /.12  /
+        b23  <- 0.007 #   Carbon cycle transition matrix                    /0.007/
+#* These are for declaration and are defined later
+        b11  <- NULL   # Carbon cycle transition matrix
+        b21  <- NULL  # Carbon cycle transition matrix
+        b22  <- NULL  # Carbon cycle transition matrix
+        b32  <- NULL  # Carbon cycle transition matrix
+        b33  <- NULL  # Carbon cycle transition matrix
+        sig0  <- NULL  # Carbon intensity 2010 (kgCO2 per output 2005 USD 2010)
+#** Climate model parameters
+        t2xco2  <- 3.1 # Equilibrium temp impact (oC per doubling CO2)    / 3.1 /
+        fex0  <- 0.5 #   2015 forcings of non-CO2 GHG (Wm-2)              / 0.5 /
+        fex1  <- 1.0 #   2100 forcings of non-CO2 GHG (Wm-2)              / 1.0 /
+        tocean0  <- .0068 # Initial lower stratum temp change (C from 1900) /.0068/
+        tatm0  <- 0.85 #  Initial atmospheric temp change (C from 1900)    /0.85/
+        c1  <- 0.1005 #     Climate equation coefficient for upper level  /0.1005/
+        c3  <- 0.088 #     Transfer coefficient upper to lower stratum    /0.088/
+        c4  <- 0.025 #     Transfer coefficient for lower level           /0.025/
+        fco22x  <- 3.6813 # Forcings of equilibrium CO2 doubling (Wm-2)   /3.6813 /
+#** Climate damage parameters
+        a10  <- 0 #     Initial damage intercept                         /0   /
+        a20  <- NULL #     Initial damage quadratic term
+        a1  <- 0 #      Damage intercept                                 /0   /
+        a2  <- 0.00236 #      Damage quadratic term                     /0.00236/
+        a3  <- 2.00 #      Damage exponent                              /2.00   /
+#** Abatement cost
+        expcost2 <- 2.6 # Exponent of control cost function             / 2.6  /
+        pback  <- 550 #   Cost of backstop 2010$ per tCO2 2015          / 550  /
+        gback  <- .025 #   Initial cost decline backstop cost per period / .025/
+        limmiu  <- 1.2 #  Upper limit on control rate after 2150        / 1.2 /
+        tnopol  <- 45 #  Period before which no emissions controls base  / 45   /
+        cprice0  <- 2 # Initial base carbon price (2010$ per tCO2)      / 2    /
+        gcprice  <- .02 # Growth rate of base carbon price per year     /.02  /
+
+#** Scaling and inessential parameters
+#* Note that these are unnecessary for the calculations
+#* They ensure that MU of first period's consumption =1 and PV cons = PV utilty
+        scale1  <- 0.0302455265681763 #    Multiplicative scaling coefficient           /0.0302455265681763 /
+        scale2  <- -10993.704 #    Additive scaling coefficient       /-10993.704/;
+
+#* Program control variables
+#sets     tfirst(t), tlast(t), tearly(t), tlate(t);
+
+# PARAMETERS
+#         l(t)          Level of population and labor
+#         al(t)         Level of total factor productivity
+#         sigma(t)      CO2-equivalent-emissions output ratio
+#         rr(t)         Average utility social discount rate
+#         ga(t)         Growth rate of productivity from
+#         forcoth(t)    Exogenous forcing for other greenhouse gases
+#         gl(t)         Growth rate of labor
+#         gcost1        Growth of cost factor
+#         gsig(t)       Change in sigma (cumulative improvement of energy efficiency)
+#         etree(t)      Emissions from deforestation
+#         cumetree(t)   Cumulative from land
+#         cost1(t)      Adjusted cost for backstop
+#         lam           Climate model parameter
+#         gfacpop(t)    Growth factor population
+#         pbacktime(t)  Backstop price
+#         optlrsav      Optimal long-run savings rate used for transversality
+#         scc(t)        Social cost of carbon
+#         cpricebase(t) Carbon price in base case
+#         photel(t)     Carbon Price under no damages (Hotelling rent condition)
+#         ppm(t)        Atmospheric concentrations parts per million
+#         atfrac(t)     Atmospheric share since 1850
+#         atfrac2010(t)     Atmospheric share since 2010 ;
+```
+
+```{r Calculated_parameters, eval=TRUE, include=FALSE}
+#* Program control definitions
+        tfirst <- t == 1 # tfirst(t) = yes$(t.val eq 1);
+        tlast <- t == length(t) #tfirst(t)  = yes$(t.val eq card(t));
+#* Parameters for long-run consistency of carbon cycle
+        b11 = 1 - b12;
+        b21 = b12*mateq/mueq;
+        b22 = 1 - b21 - b23;
+        b32 = b23*mueq/mleq;
+        b33 = 1 - b32 ;
+#* Further definitions of parameters
+        a20 = a2;
+        sig0 = e0/(q0*(1-miu0));
+        lam = fco22x/ t2xco2;
+        l = pop0 # l("1") = pop0;
+        # loop(t, l(t+1)=l(t););
+        # loop(t, l(t+1)=l(t)*(popasym/l(t))**popadj ;);
+        for(i in 2:NT) l[i] <- l[i-1] * (popasym / l[i-1])**popadj
+        # ga(t)=ga0*exp(-dela*5*((t.val-1)));
+        ga <- ga0 * exp(-dela*5*(t-1))
+        # al("1") = a0; loop(t, al(t+1)=al(t)/((1-ga(t))););
+        al <- a0; for(i in 2:NT) {al[i] <- al[i-1]/(1-ga[i-1])} 
+        gsig <- gsigma1 # gsig("1")=gsigma1; 
+        # loop(t,gsig(t+1)=gsig(t)*((1+dsig)**tstep) ;);
+        for(i in 2:NT) gsig[i] <- gsig[i-1]*((1+dsig)**tstep) 
+        sigma <- sig0 # sigma("1")=sig0;   
+        #loop(t,sigma(t+1)=(sigma(t)*exp(gsig(t)*tstep)););
+        for(i in 2:NT) sigma[i] <- (sigma[i-1] * exp(gsig[i-1] * tstep)) 
+        # pbacktime(t)=pback*(1-gback)**(t.val-1);
+        pbacktime <- pback * (1-gback)**(t-1) 
+        # cost1(t) = pbacktime(t)*sigma(t)/expcost2/1000;
+        cost1 <- pbacktime * sigma / expcost2 / 1000 
+        # etree(t) = eland0*(1-deland)**(t.val-1);
+        etree <- eland0*(1-deland)**(t-1) 
+        cumetree <- 100  # cumetree("1")= 100; 
+        # loop(t,cumetree(t+1)=cumetree(t)+etree(t)*(5/3.666););
+        for(i in 2:NT) cumetree[i] <- cumetree[i-1] + etree[i-1]*(5/3.666) 
+        # rr(t) = 1/((1+prstp)**(tstep*(t.val-1)));
+        rr <- 1/((1+prstp)**(tstep*(t-1))) 
+        # forcoth(t) = fex0 + (1/17)*(fex1-fex0)*(t.val-1)$(t.val lt 18)+
+        #               (fex1-fex0)$(t.val ge 18);
+        forcoth <- rep(fex0, NT)
+        forcoth[1:17] <- forcoth[1:17] + (1/17)*(fex1-fex0)*(t[1:17]-1)
+        forcoth[18:NT] <- forcoth[18:NT] + (fex1-fex0)
+        # optlrsav = (dk + .004)/(dk + .004*elasmu + prstp)*gama;
+        optlrsav <- (dk + .004)/(dk + .004*elasmu + prstp)*gama 
+
+#*Base Case Carbon Price
+        # cpricebase(t)= cprice0*(1+gcprice)**(5*(t.val-1));
+        cpricebase <- cprice0*(1+gcprice)**(5*(t-1)) 
+
+  pars <- c("a0", "a1", "a10", "a2", "a20", "a3", "al", "b11", "b12", "b21", "b22", "b23", "b32", "b33", "c1", "c3", "c4", "cost1", "cprice0", "cpricebase", "cumetree", "dela", "deland", "dk", "dsig", "e0", "eland0", "elasmu", "etree", "expcost2", "fco22x", "fex0", "fex1", "forcoth", "fosslim", "ga", "ga0", "gama", "gback", "gcprice", "gsig", "gsigma1", "ifopt", "k0", "l", "lam", "limmiu", "mat0", "mateq", "miu0", "ml0", "mleq", "mu0", "mueq", "optlrsav", "pback", "pbacktime", "pop0", "popadj", "popasym", "prstp", "q0", "rr", "scale1", "scale2", "sig0", "sigma", "t", "t2xco2", "tatm0", "tfirst", "tlast", "tnopol", "tocean0", "tstep")
+   prm <- sapply(pars, function(x) get(x, envir = as.environment(1)))  
+       
+             
+if (F) {
+  pars <- objects()
+  write.table(t(as.matrix(pars)), "pars.csv", row.names = FALSE, col.names = F, sep = ", ")
+  
+  prm <- sapply(pars, function(x) get(x, envir = as.environment(1)))  
+  names(prm)
+  prm["t"]
+  # save(list = ls(), file = "/Users/OL/Documents/Julia/DICE2016_params.rda")
+  save(pars, file = "/Users/OL/Documents/Julia/DICE2016_params.rda")
+
+}
+
+```
+
+## Model Variables and Equations  
+```{r VAR&EQ_Declarations, eval=F, include=TRUE}
+## Declaration in R is not needed
+# VARIABLES
+#         MIU(t)          Emission control rate GHGs
+#         FORC(t)         Increase in radiative forcing (watts per m2 from 1900)
+#         TATM(t)         Increase temperature of atmosphere (degrees C from 1900)
+#         TOCEAN(t)       Increase temperature of lower oceans (degrees C from 1900)
+#         MAT(t)          Carbon concentration increase in atmosphere (GtC from 1750)
+#         MU(t)           Carbon concentration increase in shallow oceans (GtC from 1750)
+#         ML(t)           Carbon concentration increase in lower oceans (GtC from 1750)
+#         E(t)            Total CO2 emissions (GtCO2 per year)
+#         EIND(t)         Industrial emissions (GtCO2 per year)
+#         C(t)            Consumption (trillions 2005 US dollars per year)
+#         K(t)            Capital stock (trillions 2005 US dollars)
+#         CPC(t)          Per capita consumption (thousands 2005 USD per year)
+#         I(t)            Investment (trillions 2005 USD per year)
+#         S(t)            Gross savings rate as fraction of gross world product
+#         RI(t)           Real interest rate (per annum)
+#         Y(t)            Gross world product net of abatement and damages (trillions 2005 USD per year)
+#         YGROSS(t)       Gross world product GROSS of abatement and damages (trillions 2005 USD per year)
+#         YNET(t)         Output net of damages equation (trillions 2005 USD per year)
+#         DAMAGES(t)      Damages (trillions 2005 USD per year)
+#         DAMFRAC(t)      Damages as fraction of gross output
+#         ABATECOST(t)    Cost of emissions reductions  (trillions 2005 USD per year)
+#         MCABATE(t)      Marginal cost of abatement (2005$ per ton CO2)
+#         CCA(t)          Cumulative industrial carbon emissions (GTC)
+#         CCATOT(t)       Total carbon emissions (GtC)
+#         PERIODU(t)      One period utility function
+#         CPRICE(t)       Carbon price (2005$ per ton of CO2)
+#         CEMUTOTPER(t)   Period utility
+#         UTILITY         Welfare function;
+# 
+# NONNEGATIVE VARIABLES  MIU, TATM, MAT, MU, ML, Y, YGROSS, C, K, I;
+# 
+# EQUATIONS
+# *Emissions and Damages
+#         EEQ(t)           Emissions equation
+#         EINDEQ(t)        Industrial emissions
+#         CCACCA(t)        Cumulative industrial carbon emissions
+#         CCATOTEQ(t)        Cumulative total carbon emissions
+#         FORCE(t)         Radiative forcing equation
+#         DAMFRACEQ(t)     Equation for damage fraction
+#         DAMEQ(t)         Damage equation
+#         ABATEEQ(t)       Cost of emissions reductions equation
+#         MCABATEEQ(t)     Equation for MC abatement
+#         CARBPRICEEQ(t)   Carbon price equation from abatement
+# 
+# *Climate and carbon cycle
+#         MMAT(t)          Atmospheric concentration equation
+#         MMU(t)           Shallow ocean concentration
+#         MML(t)           Lower ocean concentration
+#         TATMEQ(t)        Temperature-climate equation for atmosphere
+#         TOCEANEQ(t)      Temperature-climate equation for lower oceans
+# 
+# *Economic variables
+#         YGROSSEQ(t)      Output gross equation
+#         YNETEQ(t)        Output net of damages equation
+#         YY(t)            Output net equation
+#         CC(t)            Consumption equation
+#         CPCE(t)          Per capita consumption definition
+#         SEQ(t)           Savings rate equation
+#         KK(t)            Capital balance equation
+#         RIEQ(t)          Interest rate equation
+# 
+# * Utility
+#         CEMUTOTPEREQ(t)  Period utility
+#         PERIODUEQ(t)     Instantaneous utility function equation
+#         UTIL             Objective function      ;
+
+
+```
+
+```{r Variables_matrix, eval=TRUE, include=FALSE}
+# Note: units in 2005 US dollars have been changed to 2010, based on parameters' units
+# (2005 is probably carryover from previous version of DICE)
+vars <- matrix(nrow = 28, ncol = 3) 
+colnames(vars) <- c("name", "description", "unit")
+i <- 1
+vars[i,] <- c("MIU", "Emission control rate GHGs", "share"); i <- i+1
+vars[i,] <- c("FORC", "Increase in radiative forcing", "watts per m2 from 1900"); i <- i+1
+vars[i,] <- c("TATM", "Increase temperature of atmosphere", "degrees C from 1900"); i <- i+1
+vars[i,] <- c("TOCEAN", "Increase temperature of lower oceans", "degrees C from 1900"); i <- i+1
+vars[i,] <- c("MAT", "Carbon concentration increase in atmosphere", "GtC from 1750"); i <- i+1
+vars[i,] <- c("MU", "Carbon concentration increase in shallow oceans", "GtC from 1750"); i <- i+1
+vars[i,] <- c("ML", "Carbon concentration increase in lower oceans", "GtC from 1750"); i <- i+1
+vars[i,] <- c("E", "Total CO2 emissions", "GtCO2 per year"); i <- i+1
+vars[i,] <- c("EIND", "Industrial emissions", "GtCO2 per year"); i <- i+1
+vars[i,] <- c("C", "Consumption", "trillions 2010 US dollars per year"); i <- i+1
+vars[i,] <- c("K", "Capital stock", "trillions 2010 US dollars"); i <- i+1
+vars[i,] <- c("CPC", "Capital stock", "trillions 2010 US dollars"); i <- i+1
+vars[i,] <- c("I", "Investment", "trillions 2010 USD per year"); i <- i+1
+vars[i,] <- c("S", "Gross savings rate as fraction of gross world product", ""); i <- i+1
+vars[i,] <- c("RI", "Real interest rate", "per annum"); i <- i+1
+vars[i,] <- c("Y", "Gross world product net of abatement and damages", "trillions 2010 USD per year"); i <- i+1
+vars[i,] <- c("YGROSS", "Gross world product GROSS of abatement and damages", "trillions 2010 USD per year"); i <- i+1
+vars[i,] <- c("YNET", "Output net of damages equation", "trillions 2010 USD per year"); i <- i+1
+vars[i,] <- c("DAMAGES", "Damages", "trillions 2010 USD per year"); i <- i+1
+vars[i,] <- c("DAMFRAC", "Damages as fraction of gross output", ""); i <- i+1
+vars[i,] <- c("ABATECOST", "Cost of emissions reductions", "trillions 2010 USD per year"); i <- i+1
+vars[i,] <- c("MCABATE", "Marginal cost of abatement", "2010$ per ton CO2"); i <- i+1
+vars[i,] <- c("CCA", "Cumulative industrial carbon emissions", "GtC"); i <- i+1
+vars[i,] <- c("CCATOT", "Total carbon emissions", "GtC"); i <- i+1
+vars[i,] <- c("PERIODU", "One period utility function", ""); i <- i+1
+vars[i,] <- c("CPRICE", "Carbon price", "2010$ per ton of CO2"); i <- i+1
+vars[i,] <- c("CEMUTOTPER", "Period utility", ""); i <- i+1
+vars[i,] <- c("UTILITY", "Welfare function", ""); i <- i+1
+rownames(vars) <- vars[,1]
+vars[,2:3]
+
+```
+
+
+### DICE equations as R-functions
+All equations are converted to functions of other variables. Parameters are taken from the global environment, i.e. we do not parcing them to functions expliciely. Variables are denoted with uppercase letters, exogenous parameters - lowercase (excluding Labor). 
+If time __t__ is specifies, the functions return a scalar for the time. Otherwise, the output will the the whole vector. For recursive variables the previous vector should be also specified if only one value is expected.  
+
+```{r Equations_2_functions, eval=TRUE, include=FALSE}
+# ** Equations of the model
+# *Emissions and Damages
+# eeq(t)..             E(t)           =E= EIND(t) + etree(t);
+fE <- function(EIND, tt = NULL, dE = 0) {
+  # adding dE for calculation of SCC
+  if (is.null(tt)) {
+    EIND + etree + dE
+  } else {
+    EIND[tt] + etree[tt] + dE
+  }
+ }
+
+# eindeq(t)..          EIND(t)        =E= sigma(t) * YGROSS(t) * (1-(MIU(t)));
+fEIND <- function(YGROSS, MIU, tt = NULL) {
+  if (is.null(tt)) {
+    sigma * YGROSS * (1 - MIU) 
+  } else {
+    sigma[tt] * YGROSS[tt] * (1 - MIU[tt]) 
+  }
+}
+ 
+ #ccacca(t+1)..        CCA(t+1)       =E= CCA(t)+ EIND(t)*5/3.666;
+fCCA <- function(EIND, tt = NULL, CCA = NULL) {
+  if (is.null(tt)) {
+    CCA <- rep(NA, NT)
+    CCA[1] <- 400 # see line 279: CCA.FX(tfirst)    = 400;
+    for (i in 1:(NT-1)) {CCA[i+1] <- CCA[i] + EIND[i] * 5 / 3.666}
+    return(CCA)
+  } else {
+    if (tt == 1) return(400)
+    CCA[tt] <- CCA[tt-1] + EIND[tt-1] * 5 / 3.666
+    return(CCA[tt])
+  }
+}
+
+# ccatoteq(t)..        CCATOT(t)      =E= CCA(t)+cumetree(t);
+fCCATOT <- function(CCA, tt = NULL) {
+  if (is.null(tt)) {
+    CCA + cumetree
+  } else {
+    CCA[tt] + cumetree[tt]
+  }
+}
+
+# force(t)..           FORC(t)        =E= fco22x * ((log((MAT(t)/588.000))/log(2))) + forcoth(t);
+fFORC <- function(MAT, tt = NULL) {
+  if (is.null(tt)) {
+    fco22x * log(MAT/588.000)/log(2) + forcoth
+  } else {
+    fco22x * log(MAT[tt]/588.000)/log(2) + forcoth[tt]
+  }
+}
+
+# damfraceq(t) ..      DAMFRAC(t)     =E= (a1*TATM(t))+(a2*TATM(t)**a3) ;
+fDAMFRAC <- function(TATM, tt = NULL) {
+  if (is.null(tt)) {
+    a1*TATM + a2*TATM**a3
+  } else {
+    a1*TATM[tt] + a2*TATM[tt]**a3
+  }
+}
+
+# dameq(t)..           DAMAGES(t)     =E= YGROSS(t) * DAMFRAC(t);
+fDAMAGES <- function(YGROSS, DAMFRAC, tt = NULL) {
+  if (is.null(tt)) {
+    YGROSS * DAMFRAC
+  } else {
+      YGROSS[tt] * DAMFRAC[tt]
+  }
+}
+
+# abateeq(t)..         ABATECOST(t)   =E= YGROSS(t) * cost1(t) * (MIU(t)**expcost2);
+fABATECOST <- function(YGROSS, MIU, tt = NULL) {
+  if (is.null(tt)) {
+    YGROSS * cost1 * MIU**expcost2
+  } else {
+    YGROSS[tt] * cost1[tt] * MIU[tt]**expcost2
+  }
+}
+
+# mcabateeq(t)..       MCABATE(t)     =E= pbacktime(t) * MIU(t)**(expcost2-1);
+fMCABATE <- function(MIU, tt = NULL) {
+  if (is.null(tt)) {
+    pbacktime * MIU**(expcost2-1)
+  } else {
+    pbacktime[tt] * MIU[tt]**(expcost2-1)
+  }
+}
+
+# carbpriceeq(t)..     CPRICE(t)      =E= pbacktime(t) * (MIU(t))**(expcost2-1);
+fCPRICE <- function(MIU, tt = NULL) {
+  if (is.null(tt)) {
+    pbacktime * (MIU)**(expcost2-1)
+  }else{
+      pbacktime[tt] * (MIU[tt])**(expcost2-1)
+  }
+}
+
+# *Climate and carbon cycle ####
+# mmat(t+1)..          MAT(t+1)       =E= MAT(t)*b11 + MU(t)*b21 + (E(t)*(5/3.666));
+fMAT <- function(MU = NULL, E = NULL, tt = NULL, MAT = NULL) {
+  if (is.null(tt)) {
+    MAT <- rep(NA, NT)
+    MAT[1] <- mat0 # MAT.FX(tfirst)    = mat0;
+    for (i in 1:(NT-1)) {MAT[i+1] <- MAT[i]*b11 + MU[i]*b21 + E[i] * 5 / 3.666}
+    return(MAT)
+  } else {
+    if (tt == 1) return(mat0)
+    MAT[tt-1]*b11 + MU[tt-1]*b21 + E[tt-1] * 5 / 3.666
+  }
+}
+ 
+# mml(t+1)..           ML(t+1)        =E= ML(t)*b33  + MU(t)*b23;
+fML <- function(MU = NULL, tt = NULL, ML = NULL) {
+  if (is.null(tt)) {
+    ML <- rep(NA, NT)
+    ML[1] <- ml0 # ML.FX(tfirst)     = ml0;
+    for (i in 1:(NT-1)) ML[i+1] <- ML[i]*b33  + MU[i]*b23
+    return(ML)
+  } else {
+    if (tt == 1) return(ml0)
+    ML[tt-1] * b33  + MU[tt-1] * b23
+  }
+}
+  
+# mmu(t+1)..           MU(t+1)        =E= MAT(t)*b12 + MU(t)*b22 + ML(t)*b32;
+fMU <- function(MAT, ML, tt = NULL, MU = NULL) {
+  if (is.null(tt)) {
+    MU <- rep(NA, NT)
+    MU[1] <- mu0 # MU.FX(tfirst)     = mu0;
+    for (i in 1:(NT-1)) MU[i+1] <- MAT[i]*b12 + MU[i]*b22 + ML[i]*b32
+    return(MU)
+  } else {
+    if (tt == 1) return(mu0)
+    MAT[tt-1]*b12 + MU[tt-1]*b22 + ML[tt-1]*b32
+  }
+}
+
+# tatmeq(t+1)..        TATM(t+1)      =E= TATM(t) + c1 * ((FORC(t+1)-(fco22x/t2xco2)*TATM(t))-(c3*(TATM(t)-TOCEAN(t))));
+fTATM <- function(FORC, TOCEAN, tt = NULL, TATM = NULL) {
+  if (is.null(tt)) {
+    TATM  <- rep(NA, NT)
+    TATM[1] <- tatm0 # TATM.FX(tfirst)   = tatm0;
+    for (i in 1:(NT-1)) {TATM[i+1] <- TATM[i] + c1 * (FORC[i+1] - (fco22x/t2xco2) * TATM[i] - 
+                                                        c3 * (TATM[i] - TOCEAN[i]))}
+    return(TATM)
+  } else {
+    if (tt == 1) return(tatm0)
+    TATM[tt-1] + c1 * (FORC[tt] - (fco22x/t2xco2) * TATM[tt-1] - c3 * (TATM[tt-1] - TOCEAN[tt-1]))
+  }
+}
+ 
+# toceaneq(t+1)..      TOCEAN(t+1)    =E= TOCEAN(t) + c4*(TATM(t)-TOCEAN(t));
+fTOCEAN <- function(TATM, tt = NULL, TOCEAN = NULL) {
+  if (is.null(tt)) {
+    TOCEAN <- rep(NA, NT)
+    TOCEAN[1] <- tocean0 # TOCEAN.FX(tfirst) = tocean0;
+    for (i in 1:(NT-1)) {TOCEAN[i+1] <- TOCEAN[i] + c4*(TATM[i]-TOCEAN[i])}
+    return(TOCEAN)
+  } else {
+    if (tt == 1) return(tocean0)
+    TOCEAN[tt-1] + c4 * (TATM[tt-1] - TOCEAN[tt-1])
+  }
+}
+
+# *Economic variables ####
+#  ygrosseq(t)..        YGROSS(t)      =E= (al(t)*(l(t)/1000)**(1-GAMA))*(K(t)**GAMA);
+fYGROSS <- function(K, tt = NULL) {
+  if (is.null(tt)) {
+    al * ((l/1000)**(1-gama)) * K**gama
+  } else {
+    al[tt] * ((l[tt]/1000)**(1-gama)) * K[tt]**gama
+  }
+}
+
+# yneteq(t)..          YNET(t)        =E= YGROSS(t)*(1-damfrac(t));
+fYNET <- function(YGROSS, DAMFRAC, tt = NULL) {
+  if (is.null(tt)) {
+    YGROSS * (1 - DAMFRAC)
+  } else {
+    YGROSS[tt] * (1 - DAMFRAC[tt])
+  }
+}
+
+# yy(t)..              Y(t)           =E= YNET(t) - ABATECOST(t);
+fY <- function(YNET, ABATECOST, tt = NULL) {
+  if (is.null(tt)) {
+    YNET - ABATECOST
+  } else {
+    YNET[tt] - ABATECOST[tt]
+  }
+}
+
+# cc(t)..              C(t)           =E= Y(t) - I(t);
+fC <- function(Y, I, tt = NULL) {
+  if (is.null(tt)) {
+    Y - I
+  } else {
+    Y[tt] - I[tt]
+  }
+}
+
+# cpce(t)..            CPC(t)         =E= 1000 * C(t) / l(t);
+fCPC <- function(C, tt = NULL) {
+  if (is.null(tt)) {
+    1000 * C / l
+  } else {
+    1000 * C[tt] / l[tt]
+  }
+}
+
+# seq(t)..             I(t)           =E= S(t) * Y(t);
+fI <- function(S, Y, tt = NULL) {
+  if (is.null(tt)) {
+    S * Y
+  } else {
+    S[tt] * Y[tt] 
+  }
+}
+
+# kk(t+1)..            K(t+1)         =L= (1-dk)**tstep * K(t) + tstep * I(t);
+fK <- function(I = NULL, tt = NULL, K = NULL) {
+  #stopifnot(is.null(I) == FALSE)
+  if (is.null(tt)) {
+    K <- rep(NA, NT)
+    K[1] <- k0 # K.FX(tfirst)      = k0;
+    for (i in 1:(NT-1)) {K[i+1] <- (1-dk)**tstep * K[i] + tstep * I[i]}
+    return(K)
+  } else {
+    if (tt == 1) return(k0)
+    (1-dk)**tstep * K[tt-1] + tstep * I[tt-1]
+  }
+}
+
+# rieq(t+1)..          RI(t)          =E= (1+prstp) * (CPC(t+1)/CPC(t))**(elasmu/tstep) - 1;
+fRI <- function(CPC, tt = NULL) {
+  #if (tt == 1) return(1)
+  if (is.null(tt)) {
+    RI <- rep(NA, NT)
+    for (i in 1:(NT-1)) {RI[i] <- (1+prstp) * (CPC[i+1]/CPC[i])**(elasmu/tstep) - 1}
+    #RI[NT] <- RI[NT-1]
+    return(RI)
+  } else {
+    #if (tt == 1) return(1)
+    (1 + prstp) * (CPC[tt+1]/CPC[tt])**(elasmu/tstep) - 1
+  }
+}
+
+# *Utility
+# cemutotpereq(t)..    CEMUTOTPER(t)  =E= PERIODU(t) * l(t) * rr(t);
+fCEMUTOTPER <- function(PERIODU, tt = NULL) {
+  if (is.null(tt)) {
+    PERIODU * l * rr
+  } else {
+    PERIODU[tt] * l[tt] * rr[tt]
+  }
+}
+
+# periodueq(t)..       PERIODU(t)     =E= ((C(T)*1000/l(T))**(1-elasmu)-1)/(1-elasmu)-1;
+fPERIODU <- function(C, tt = NULL) {
+  if (is.null(tt)) {
+    ((C*1000/l)**(1-elasmu) - 1) / (1 - elasmu) - 1
+  } else {
+    ((C[tt]*1000/l[tt])**(1-elasmu) - 1) / (1 - elasmu) - 1
+  }
+}
+  
+# util..               UTILITY        =E= tstep * scale1 * sum(t,  CEMUTOTPER(t)) + scale2 ;
+fUTILITY <- function(CEMUTOTPER, tt = NULL) {
+#  scale1 = 1
+#  scale2 = -5.128e5 * scale1
+#  scale2 = scale2 * scale1
+#  scale2 = 0
+  if (is.null(tt)) tt <- NT
+  tstep * scale1 * sum(CEMUTOTPER[1:tt]) + scale2
+}
+
+```
+
+The model has two control variables (their values are result of the following optimisation routine): 
+__S__ - savings rate, which manages intertemporal equilibrium between generations
+__MIU__ - emissions control rate, manages level of controlled emissions.  
+
+```{r Control_variables, eval=TRUE, include=FALSE}
+# * Control rate limits
+# MIU.up(t)            = limmiu;
+# MIU.up(t)$(t.val<30) = 1;
+MIU.lo <- rep(0.01, NT)
+MIU.up <- rep(limmiu, NT)
+MIU.up[t < 30] <- 1
+MIU.up[1] <- miu0
+MIU.lo[1] <- miu0
+
+# * Control variables
+#set lag10(t) ;
+# lag10(t) =  yes$(t.val gt card(t)-10);
+lag10 <- t > NT - 10
+#S.FX(lag10(t)) = optlrsav;
+S.lo <- rep(1e-1, NT)
+S.lo[lag10] <- optlrsav
+S.up <- rep(.9, NT)
+S.up[lag10] <- optlrsav
+
+# Arbitrary starting values for the control variables:
+NN <- sum(!lag10)
+S_start <- rep(0.2, NT) # runif(NT, S.lo, S.up)
+S_start[S_start < S.lo] <- S.lo[S_start < S.lo]
+S_start[S_start > S.up] <- S.lo[S_start > S.up]
+MIU_start <- 0.99*MIU.up  # rep(0.9, NT) # runif(NT, MIU.lo, MIU.up)
+MIU_start[MIU_start < MIU.lo] <- MIU.lo[MIU_start < MIU.lo]
+MIU_start[MIU_start > MIU.up] <- MIU.up[MIU_start > MIU.up]
+
+```
+<!-- Drawing from GAMS code ends here -->
+
+## The objective  
+The objective is formulated as an R function of two control variables (MIU and S), which are now parameters in the function optimization problem. The solution of the model is then a finding a maxima of the function subject to parameters _MIU_ and _S_. The base-run of DICE modes can be formulated reqursively without additional constrains on variables (like TATM or fosslim). Hotteling and low-carbon scenarios require additional constrain functions, which are discussed later.  
+
+```{r Objective, eval=TRUE, include=FALSE}
+MIU <- MIU_start
+S <- S_start
+
+# Initialization/reset of DICE variables
+if (T) {
+  K <- NULL
+  YGROSS <- NULL
+  EIND <- NULL
+  E <- NULL
+  CCA <- NULL
+  CCATOT <- NULL
+  MAT <- NULL
+  ML <- NULL
+  MU <- NULL
+  FORC <- NULL
+  TATM <- NULL
+  TOCEAN <- NULL
+  DAMFRAC <- NULL
+  DAMAGES <- NULL
+  ABATECOST <- NULL
+  MCABATE <- NULL
+  CPRICE <- NULL
+  YNET <- NULL
+  Y <- NULL
+  I <- NULL
+  C <- NULL
+  CPC <- NULL
+  RI <- NULL
+  PERIODU <- NULL
+  CEMUTOTPER <- NULL
+  UTILITY <- NULL
+}
+
+fOBJ <- function(x, minimize = TRUE, ALL = FALSE, asTibble = FALSE, pars = NULL, 
+                 dE = NULL) {
+  if(is.null(dE)) dE <- rep(0, NT)
+  MIU <- x[1:NT]
+  S <- x[(NT+1):(2*NT)]
+  for (i in 1:NT) {
+    K[i] <- fK(I = I, tt = i, K = K)
+    YGROSS[i] <- fYGROSS(K = K, tt = i)
+    EIND[i] <- fEIND(YGROSS = YGROSS, MIU = MIU, tt = i)
+    E[i] <- fE(EIND = EIND, tt = i, dE = dE[i])
+    CCA[i] <- fCCA(EIND, tt = i, CCA = CCA)
+    CCATOT[i] <- fCCATOT(CCA = CCA, tt = i)
+    MAT[i] <- fMAT(MU = MU, E = E, tt = i, MAT = MAT)
+    ML[i] <- fML(MU = MU, tt = i, ML = ML)
+    MU[i] <- fMU(MAT, ML, tt = i, MU = MU)
+    FORC[i] <- fFORC(MAT, tt = i)
+    TATM[i] <- fTATM(FORC = FORC, TOCEAN, tt = i, TATM = TATM)
+    TOCEAN[i] <- fTOCEAN(TATM = TATM, tt = i, TOCEAN = TOCEAN) 
+    DAMFRAC[i] <- fDAMFRAC(TATM = TATM, tt = i)
+    DAMAGES[i] <- fDAMAGES(YGROSS, DAMFRAC, tt = i)
+    ABATECOST[i] <- fABATECOST(YGROSS, MIU, tt = i)
+    MCABATE[i] <- fMCABATE(MIU, tt = i) 
+    CPRICE[i] <- fCPRICE(MIU, tt = i)
+    YNET[i] <- fYNET(YGROSS, DAMFRAC, tt = i)
+    Y[i] <- fY(YNET, ABATECOST, tt = i)
+    I[i] <- fI(S, Y, tt = i)
+    C[i] <- fC(Y, I, tt = i)
+    CPC[i] <- fCPC(C, tt = i)
+    #RI[i-1] <- fRI(CPC, tt = i-1)
+    PERIODU[i] <- fPERIODU(C, tt = i)
+    CEMUTOTPER[i] <- fCEMUTOTPER(PERIODU, tt = i)
+  }
+  RI <- fRI(CPC)
+  UTILITY <- fUTILITY(CEMUTOTPER, i)
+  if (ALL) {
+    ll = list(
+      MIU = MIU,
+      S = S,
+      K = K,
+      YGROSS = YGROSS,
+      EIND = EIND,
+      E = E,
+      CCA = CCA,
+      CCATOT = CCATOT,
+      MAT = MAT,
+      ML = ML,
+      MU = MU,
+      FORC = FORC,
+      TATM = TATM,
+      TOCEAN = TOCEAN,
+      DAMFRAC = DAMFRAC,
+      DAMAGES = DAMAGES,
+      ABATECOST = ABATECOST,
+      MCABATE = MCABATE,
+      CPRICE = CPRICE,
+      YNET = YNET,
+      Y = Y,
+      I = I,
+      C = C,
+      CPC = CPC,
+      RI = RI,
+      PERIODU = PERIODU,
+      CEMUTOTPER = CEMUTOTPER,
+      UTILITY = UTILITY      
+    )
+    if(asTibble) {
+      ll <- sapply(ll, function(v) {
+        if(length(v) == length(t)) {
+          tibble(t = t, l = v)
+        } else {
+          tibble(l = v)
+        }
+      })
+    }
+    if(!is.null(pars)) {
+      if(asTibble) {
+        pr <- sapply(pars, function(v) {
+          if(length(v) == length(t)) {
+            tibble(t = t, value = v)
+          } else {
+            tibble(value = v)
+          }
+        })
+      } else {
+        pr <- pars
+      }
+      ll = c(ll, pr)
+    }
+    return(ll)
+  } else {
+    if (minimize) cf <- -1 else cf <- 1
+    return(cf * UTILITY)
+  }
+  
+}
+```
+
+```{r Check, eval=FALSE, include=FALSE}
+
+#The script in this chunk is optional - for testing the objective function
+
+if (F) { # test
+  fOBJ(c(MIU_start, S_start))
+  bb <- fOBJ(c(MIU_start, S_start), ALL = TRUE)
+  
+  plot(bb$TATM, type = "l")
+  plot(bb$MIU, type = "l")
+  plot(bb$S, type = "l")
+  plot(bb$K, type = "l")
+  plot(bb$YGROSS, type = "l")
+  plot(bb$EIND, type = "l")
+  plot(bb$E, type = "l")
+  plot(bb$CCA, type = "l")
+  plot(bb$CCATOT, type = "l")
+  plot(bb$MAT, type = "l")
+  plot(bb$ML, type = "l")
+  plot(bb$MU, type = "l")
+  plot(bb$FORC, type = "l")
+  plot(bb$TATM, type = "l")
+  plot(bb$TOCEAN, type = "l")
+  plot(bb$DAMFRAC, type = "l")
+  plot(bb$DAMAGES, type = "l")
+  plot(bb$ABATECOST, type = "l")
+  plot(bb$MCABATE, type = "l")
+  plot(bb$CPRICE, type = "l")
+  plot(bb$YNET, type = "l")
+  plot(bb$Y, type = "l")
+  plot(bb$I, type = "l")
+  plot(bb$I, log = "y", type = "l")
+  plot(bb$C, type = "l")
+  plot(bb$CPC, type = "l")
+  plot(bb$CPC, log = "y", type = "l")
+  plot(bb$RI, type = "l")
+  plot(bb$PERIODU, type = "l")
+  plot(bb$CEMUTOTPER, type = "l")
+  (bb$UTILITY)  
+
+  # Check results of adding marginal emission (for SCC estimates)
+  dE_tt <- rep(0, NT); dE_tt[50] <- 10
+  scc <- fOBJ(c(MIU_start, S_start), ALL = TRUE, dE = dE_tt)
+  plot(bb$E, type = "l", lwd = 2)
+  points(scc$E, type = "l", lwd = 1, col = "red")
+
+  plot(bb$TATM, type = "l", lwd = 2)
+  points(scc$TATM, type = "l", lwd = 1, col = "red")
+
+  plot(bb$DAMAGES, type = "l", lwd = 2)
+  points(scc$DAMAGES, type = "l", lwd = 1.5, col = "red")
+
+}
+
+
+```
+
+
+```{r Reporting_Functions, eval=TRUE, include=FALSE}
+plt <- function(lower = c(MIU.lo, S.lo), upper = c(MIU.up, S.up)) {
+  # Base
+  yrange <- c(floor(min(lower)), ceiling(max(upper) * 10) / 10)
+  nn <- length(lower)
+  nm <- floor(nn/2)
+  plot(lower, col = "lightblue", lwd = 4, ylim = yrange, 
+       type = "n", xlab = "c(t,t)", ylab = "MIU, S",
+       main = "Control variables 'MIU' and 'S'")
+  abline(v = nm + .5, col = "black", lwd = 4)
+  #abline(v = 1, col = "grey", lwd = 1)
+  #abline(v = nn, col = "grey", lwd = 1)
+  #abline(h = 0, col = "grey", lwd = 1)
+  points(lower[1:nm], col = "lightblue", lwd = 4, type = "l")
+  points((1:nm)+nm, lower[(nm+1):nn], col = "lightblue", lwd = 4, type = "l")
+  points(upper[1:nm], col = "lightblue", lwd = 4, type = "l")
+  points((1:nm)+nm, upper[(nm+1):nn], col = "lightblue", lwd = 4, type = "l")
+  text(0, 1.2, "MIU")
+  text(nm*1.05, 1.2, "S")
+  #points(upper, col = "lightblue", lwd = 4, type = "l")
+  # points(sl$par, col = "brown", type = "l")
+  # points(int07.lo, col = "blue", type = "l", lty = 2)
+  # points(int07.up, col = "red", type = "l", lty = 2)
+}
+#plt()
+
+```
+
+
+# Solving the model  
+If no other constrains imposed on any other than control DICE variables, the problem can be solved with a non-linear solver.  
+
+```{r NlcOptim, eval=TRUE, include=FALSE}
+# So far - the best option for constrained problems ####
+# confun <- function(x) list(c = -inEqCon(x))
+
+x_start <- c(MIU_start, S_start)
+lb_nofx <- c(MIU.lo, S.lo) 
+ub_nofx <- c(MIU.up, S.up) 
+
+# The 'NlcOptim' solver doesn't allow fixed controled variables, i.e. when 
+# upper bounds is equal to lower. To avoid the problem we add a small
+# value to one of the bounds.
+ii <- lb_nofx == ub_nofx
+summary(ii)
+lb_nofx[ii] <- lb_nofx[ii] * 0.99999
+ii <- lb_nofx == ub_nofx
+summary(ii)
+
+system.time(
+  # 1-2 minutes
+    ss1 <- NlcOptim::solnl(
+    X = x_start, 
+    objfun = fOBJ, 
+    # confun = confun,
+    lb = lb_nofx,
+    ub = ub_nofx,
+    maxIter = 1e3,
+    tolX = 1e-3,
+    tolFun = 1e-3,
+    tolCon = 1e-3)
+)
+ss1$counts
+ss1$fn
+plt()
+points(ss1$par, col = "blue", type = "l", lwd = 2)
+
+# MIU <- ss1$par[1:100]
+# S <- ss1$par[101:200]
+# fOBJ(c(MIU_start, S_start))
+# fOBJ(c(MIU, S))
+fOBJ(ss1$par)
+bb <- fOBJ(ss1$par, ALL = TRUE, asTibble = TRUE)
+bb$MIU
+
+# Improving accuracy of the solution
+system.time(
+  # 2-5 min
+  ss2 <- NlcOptim::solnl(
+    X = ss1$par, 
+    #X = ss2$par, 
+    objfun = fOBJ, 
+    # confun = confun,
+    lb = lb_nofx, 
+    ub = ub_nofx,
+    maxIter = 1e3,
+    tolX = 1e-10,
+    tolFun = 1e-10,
+    tolCon = 1e-10)
+)
+fOBJ(ss2$par)
+points(ss2$par, col = "red", type = "l", lwd = 2)
+#ss2$lambda
+#points(c(ila$MIU$l, ila$S$l), col = "black", type = "l", lwd = 1)
+bb <- fOBJ(ss2$par, ALL = TRUE, asTibble = TRUE, pars = prm)
+
+
+```
+
+## Estimating Social Costs of Carbon (SCC)
+
+```{r SCC, eval=TRUE, include=FALSE}
+
+miu_scc <- bb$MIU$l
+scc_dice <- bb$MIU
+scc_dice$l <- NA
+#discount <- ((1 + 0.03)^tstep)^(t-1) # EPA version of SCC had fixed discount
+discount <- rep(1, NT)
+for (i in 2:NT) discount[i] <- discount[i-1]*((1 + bb$RI$l[i-1])^tstep)
+dE_marg <- 0.001 # Marginal emission
+for(i in t) {
+  dE <- rep(0, NT)
+  dE[i] <- 0.001
+  bb_scc <- fOBJ(c(miu_scc, bb$S$l), ALL = T, asTibble = TRUE, dE = dE)
+  (dc <- bb_scc$DAMAGES$l - bb$DAMAGES$l)
+  scc_dice$l[i] <- 1000 *sum(dc[i:NT]/discount[i:NT], na.rm = T)/dE_marg * discount[i]
+}
+scc_dice$l
+
+```
+ 
+
+## Solving with limits on temperature (*TATM*) and fossil fuels (*fosslim*)
+
+```{r TATM.UP, eval=TRUE, include=FALSE}
+# Solving strategy: 'NlcOptim::solnl' solver allows nonlinear equality and 
+# inequality constrains, supplyed as a function of the the control parameters.
+# (see help(NlcOptim::solnl) for details).
+
+cfun <- function(X, TATM.UP = NULL, CCATOT.UP = NULL) {
+  if(!is.null(TATM.UP) | !is.null(CCATOT.UP)) ob <- fOBJ(X, ALL = TRUE)
+  ttemp <- NULL; tccatot <- NULL
+  if(!is.null(TATM.UP)) ttemp <- ob$TATM - TATM.UP
+  if(!is.null(CCATOT.UP)) tccatot <- ob$CCATOT - CCATOT.UP
+  ob <- c(ttemp, tccatot)
+  return(list(ceq=NULL, c = ob))
+}
+
+confun <- function(X) cfun(X, TATM.UP = 3)
+
+system.time(
+  # 
+  ss3 <- NlcOptim::solnl(
+    X = ss2$par, 
+    objfun = fOBJ, 
+    confun = confun,
+    lb = lb_nofx,
+    ub = ub_nofx,
+    maxIter = 1e3,
+    tolX = 1e-4,
+    tolFun = 1e-10,
+    tolCon = 1e-10)
+)
+
+fOBJ(ss3$par)
+plt()
+points(ss2$par, col = "red", type = "l", lwd = 2)
+points(ss3$par, col = "brown", type = "l", lwd = 1)
+
+t3dc <- fOBJ(ss3$par, ALL = TRUE, asTibble = TRUE)
+
+```
+
+```{r Limit_2.33C, include=FALSE, eval=TRUE}
+# Scenario 2.33C ####
+# The lowest achievable max-temperature in DICE2016 is 2.33C.
+# The model will not be solved with lower limit on the temperature
+confun <- function(X) cfun(X, TATM.UP = 2.33)
+system.time(
+  # ~3.5 mins
+  ss4 <- NlcOptim::solnl(
+    X = ss3$par, 
+    objfun = fOBJ, 
+    confun = confun,
+    lb = lb_nofx,
+    ub = ub_nofx,
+    maxIter = 1e3,
+    tolX = 1e-4,
+    tolFun = 1e-10,
+    tolCon = 1e-10)
+)
+
+fOBJ(ss4$par)
+plt()
+points(ss3$par, col = "blue", type = "l", lwd = 1)
+points(ss4$par, col = "red", type = "l", lwd = 1)
+
+t233dc <- fOBJ(ss4$par, ALL = TRUE, asTibble = TRUE)
+
+```
+
+```{r Hotteling, eval=TRUE, include=FALSE}
+# Constrain on fossil fuels
+confun <- function(X) cfun(X, CCATOT.UP = 6000)
+# with zero feedback from climate change (damages==0)
+a2 <- 0
+a3 <- 0
+# Check
+fDAMFRAC(10)
+# Set upper limit on emissions control to 1
+ub_nofx1 <- ub_nofx
+ub_nofx1[ub_nofx > 1] <- 1
+
+# First option to solve Hotteling scenario
+system.time(
+  # 5-10 mins
+  ss5 <- NlcOptim::solnl(
+    #X = c(rep(0, NT), ss2$par[(NT+1):(2*NT)]),
+    X = ss2$par,
+    objfun = fOBJ,
+    confun = confun,
+    lb = c(rep(1e-10,NT), ss2$par[(NT+1):(2*NT)]),
+    # ub = ub_nofx,
+    ub = ub_nofx1,
+    maxIter = 1e3,
+    tolX = 1e-4,
+    tolFun = 1e-7,
+    tolCon = 1e-7)
+)
+
+fOBJ(ss5$par)
+
+#points(ss5$par, col = "blue", type = "l", lwd = 2)
+hot <- fOBJ(ss5$par, ALL = TRUE, asTibble = TRUE)
+
+
+# Reset damage constants to initial
+a1 <- a10
+a2 <- a20
+a3 <- 2
+
+```
+
+```{r solveDICE_function, eval=FALSE, include=FALSE}
+
+solveDICE <- function(x_start = NULL,
+                      lb = NULL,
+                      ub = NULL,
+                      confun = NULL,
+                      tolX = 1e-3,
+                      tolFun = 1e-3,
+                      tolCon = 1e-3,
+                      maxIter = 1e3
+                      ) {
+  # Note: the solver doesn't appreciate fixed variables
+  ii <- lb == ub
+  lb[ii] <- lb[ii] * 0.99999
+  start_time <- Sys.time()
+  ss1 <- NlcOptim::solnl(
+    X = x_start, 
+    # X = ss1$par, 
+    objfun = fOBJ, 
+    confun = confun,
+    lb = lb,
+    ub = ub,
+    maxIter = 1e3,
+    tolX = tolX,
+    tolFun = tolFun,
+    tolCon = tolCon)
+  end_time <- Sys.time()
+  message(paste("Elapsed time", format(end_time - start_time)))
+  return(ss1)
+}
+
+#sd <- solveDICE(x_start = ss1$par, lb = lb_nofx, ub = ub_nofx)
+
+```
+
+## Quick comparative plots
+```{r Functions_for_comparative_analysis, eval=TRUE, include=FALSE}
+# Several scenarios data merging function - for ggplots ####
+getDat <- function(dat = list(),
+                   nam = "TATM",
+                   val = "l") {
+  Scenario = names(dat)
+  dd <- dat[[1]][[nam]]
+  ndat <- names(dat)
+  by <- sapply(dd, class)
+  by <- names(dd)[(by == "integer" | by == "character" | by == "factor")]
+  by <- by[by != "s"]
+  dd$Scenario <- factor(ndat[1], levels = Scenario, ordered = TRUE)
+  dd <- dd[,c(by, "Scenario", val)]
+  names(Scenario) <- Scenario
+  for (i in ndat[-1]) {
+    dj <- dat[[i]][[nam]]
+    ndat <- names(dat)
+    by <- sapply(dj, class)
+    by <- names(dj)[(by == "integer" | by == "character" | by == "factor")]
+    by <- by[by != "s"]
+    dj$Scenario <- factor(i, levels = Scenario, ordered = TRUE)
+    dj <- dj[,c(by, "Scenario", val)]
+    stopifnot(names(dj) == names(dd))
+    dd <- bind_rows(dd, dj)
+  }
+  dd
+}
+
+if (F) { # Test
+  dd <- getDat(dat = list(scn1 = olg3, 
+                          scn2 = olg3m),
+               nam = "E")
+  dd
+  
+  ggplot(dd, aes(x = t, y = l)) +
+    geom_line(aes(color = Scenario), size = 1) +
+    labs(x = "", y = "TATM")
+}
+
+# Quick ggplot function - to compare scenarios ####
+ggdice <- function(scen = list(),
+                   x = "t",
+                   y = "TATM",
+                   yval = "l",
+                   geom = "line",
+                   t2year = TRUE,
+                   select_t = seq(2015, 2600, by = 5)
+                   ) {
+  dd <- getDat(scen, nam = y, val = yval)
+  yDescr <- vars[y, 2]
+  yUnit <- vars[y, 3]
+  if (t2year) dd$t <- 2010 + 5 * dd$t
+  if (!is.null(dd$t)) {
+    tt <- dd$t %in% select_t
+    dd <- dd[tt,]
+  }
+  
+  a <- ggplot(dd, aes_(x = as.name(x), y = as.name(yval)))
+  if (geom == "line") a <- a + geom_line(aes(color = Scenario, linetype = Scenario), size = 1)
+  a <- a + labs(x = "", y = yUnit, title = paste0(yDescr, ", (", y, ")"))
+  a + theme(plot.title = element_text(hjust = 0.5))
+}
+
+```
+
+```{r Compare_Scenarios, eval=TRUE, include=TRUE}
+# Store scenarios' results in list-object
+scn <- list("Optimal" = bb,
+            "Hotteling" = hot,
+            "Limit 3C" = t3dc,
+            "Limit 2.33C" = t233dc)
+
+ggdice(scen = scn, y = "TATM")
+ggdice(scen = scn, y = "TATM", select_t = seq(2015, 2200, by = 5))
+ggdice(scen = scn, y = "TOCEAN")
+ggdice(scen = scn, y = "MU")
+ggdice(scen = scn, y = "ML")
+ggdice(scen = scn, y = "CCA")
+ggdice(scen = scn, y = "CCATOT")
+
+ggdice(scen = scn, y = "DAMAGES")
+ggdice(scen = scn, y = "DAMFRAC")
+ggdice(scen = scn, y = "ABATECOST")
+ggdice(scen = scn, y = "MCABATE")
+
+ggdice(scen = scn, y = "MIU", select_t = seq(2015, 2600, by = 5))
+ggdice(scen = scn, y = "MIU", select_t = seq(2015, 2200, by = 5))
+ggdice(scen = scn, y = "E")
+ggdice(scen = scn, y = "MAT")
+ggdice(scen = scn, y = "FORC")
+ggdice(scen = scn, y = "CCA")
+ggdice(scen = scn, y = "CCATOT")
+
+ggdice(scen = scn, y = "RI")
+ggdice(scen = scn, y = "RI", select_t = seq(2015, 2200, by = 5))
+ggdice(scen = scn, y = "C")
+ggdice(scen = scn, y = "Y")
+ggdice(scen = scn, y = "YNET")
+ggdice(scen = scn, y = "YGROSS")
+ggdice(scen = scn, y = "I")
+ggdice(scen = scn, y = "S")
+
+
+```
+
+```{r R_vs_GAMS, eval=FALSE, include=FALSE}
+# Comparison of results vs. original GAMS
+# TBC
+
+```
+
+
