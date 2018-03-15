@@ -24,8 +24,7 @@ R (see [The R Project for Statistical Computing](https://www.r-project.org/)) pr
 The second version of R code (*forthcoming*) is an R-package-style with all mechanics of optimization hidden under the hood of one function __solveDICE__(*forthcoming*). It is more suitable for comparative analysis of scenarios and results from different DICE versions. All parameters to the model are supplied as parameters to the function and can be manipulated by users.
 
 ## DICE in Julia
-[Julia](https://julialang.org/) is a modern high-level programming language for numerical computing with the main focus on the code-compactness and performance. With [JuMP](https://github.com/JuliaOpt/JuMP.jl) package and [IPOPT](https://projects.coin-or.org/Ipopt) open-source solver (embedded in [ipopt](https://github.com/JuliaOpt/Ipopt.jl) package for *Julia*), the translation from GAMS is pretty straightforward. Reformulation of the problem is not needed. The version of DICE2016 in Julia produces identical results with GAMS version for baseline scenario (others are not tested).
-
+[Julia](https://julialang.org/) is a modern high-level programming language for numerical computing with the main focus on the code-compactness and performance. With [JuMP](https://github.com/JuliaOpt/JuMP.jl) package and [IPOPT](https://projects.coin-or.org/Ipopt) open-source solver (embedded in [ipopt](https://github.com/JuliaOpt/Ipopt.jl) package for *Julia*), the translation from GAMS is pretty straightforward. Reformulation of the problem is not needed. This version of DICE2016 in Julia is tested with [JuliaPro v06.2.1 Personal](https://juliacomputing.com/products/juliapro.html) assembly, and produces identical results with GAMS version for baseline scenario (others are not tested).
 
 ## DICE in Python
 (forthcoming)
