@@ -43,5 +43,5 @@ for __baseline__ scenario, and can be solved with several solvers, available in 
 ## DICE in Python
 (forthcoming)
 
-## Comparative runs of different versions of DICE model
+## Comparative runs of different software versions of DICE model
 (forthcoming)
