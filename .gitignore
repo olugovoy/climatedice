@@ -22,6 +22,9 @@
 README.html
 temp*
 
+# doc
+*.doc*
+
 # produced vignettes
 vignettes/*.html
 vignettes/*.pdf

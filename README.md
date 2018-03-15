@@ -23,19 +23,6 @@ R (see [The R Project for Statistical Computing](https://www.r-project.org/)) pr
 
 The second version of R code (*forthcoming*) is an R-package-style with all mechanics of optimization hidden under the hood of one function __solveDICE()__(*forthcoming*). It is more suitable for comparative analysis of scenarios and results from different DICE versions. All parameters to the model are supplied as parameters to the function and can be manipulated by users.
 
-
-### The solution strategy
-The original DICE model is formulated as a system of non-linear equations. The 2016 version has 26 blocks of equations and 28 blocks of variables, "blocks" mean grouping according to sets (dimensions), i.e. time periods ( _t=100_ ) in DICE. Removing predetermined values of variables for particular time periods, the model has _2,493 SINGLE EQUATIONS_ and _2,700 SINGLE VARIABLES_. However, the problem can be reduced to only two _control_ variables which define the system solution, i.e. _2*100_ less fixed. Though the excessiveness of the algebraic formulation, while probably trading some efficiency of solution for readablity and transparency of the problem.
-
-Unlike GAMS (and other algebraic programming languages, f.i. [AMPL](https://ampl.com/)), __R__ (to my best knowledge) doesn't offer many options for modeling macro languages. (There are some existing initiatives, which are mostly suitable for very small problems, because of low time performance.) Due to the known time issues of R (while providing a number of other benefits), the reduction of the problem dimensionality is highly desirable, hopefully without loosing clarify of the problem formulation. Therefore the strategy of the following R code is as follows:  
-    - choose two control variables (emissions control rate (__MIU__) and savings rate (__S__) in DICE are already refered as control variables by W.Nordhaus);  
-    - represent every GAMS-equation of DICE model as an R-function of other variables and parameters;  
-    - define an objective (global welfare (__UTILITY__)) as a function of control variables (__MIU__ and __S__);  
-    - maximize the objective function using solvers for NLP problems, subject to the control variables (and constraints for particular scenarios).  
-
-This formulation of the problem doesn't require constraints on non-control variables 
-for __baseline__ scenario, and can be solved with several solvers, available in base R and other packages. Additional constrains, f.i. on temperature (__TATM__) require solvers which allow non-linear constraints on variables. So far the most flexible and robust solver (for this particular problem, from several tested) is offered in [NlcOptim](https://CRAN.R-project.org/package=NlcOptim) package by Xianyan Chen and Xiangrong Yin. The solution time with arbitrary starting values varies from 1 to 10 minutes on my machines, depending on the scenario (vs. less than a minute in GAMS). The results are identical to the original GAMS version except for some divergence to the end of the model horizon (2500s), which likely can be cured by scaling the problem, ignored by now due low importance of the problem.
-
 ## DICE in Julia
 [Julia](https://julialang.org/) is a modern high-level programming language for numerical computing with the main focus on the code-compactness and performance. With [JuMP](https://github.com/JuliaOpt/JuMP.jl) package and [IPOPT](https://projects.coin-or.org/Ipopt) open-source solver (embedded in [ipopt](https://github.com/JuliaOpt/Ipopt.jl) package for *Julia*), the translation from GAMS is pretty straightforward. Reformulation of the problem is not needed. The version of DICE2016 in Julia produces identical results with GAMS version for baseline scenario (others are not tested).
 
