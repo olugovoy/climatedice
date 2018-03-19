@@ -913,7 +913,8 @@ plt <- function(lower = c(MIU.lo, S.lo), upper = c(MIU.up, S.up)) {
 
 
 # Solving the model  
-If no other constrains imposed on any other than control DICE variables, the problem can be solved with a non-linear solver.  
+The problem of miximizing (or minimizing) the objective function *fOBJ* is now a standard NLP problem with constrains on parameters ("box constrains") for the *baseline* (*"optimal"*) scenario, and can be solved with several NLP solvers available in R. For other scenarios, with additional constrains on variables, the solver should also allow *equality* or *inequality* constrains. So far, the most most robust solver is provided by **NlcOptim** package. There are also some choices in **nloptr** package, **ipoptr**, and several others (a short comparative review is forthcoming). However, with just 200 parameters, the model can be solved with non-gradient methods. Below is an example of an elementary stochastic search algorithm with can be used for constrains on parameters and variables, and demonstrates comparative to the solvers-solutions performance. 
+
 
 ```{r NlcOptim, eval=TRUE, include=FALSE}
 # So far - the best option for constrained problems ####
@@ -979,6 +980,57 @@ points(ss2$par, col = "red", type = "l", lwd = 2)
 #points(c(ila$MIU$l, ila$S$l), col = "black", type = "l", lwd = 1)
 bb <- fOBJ(ss2$par, ALL = TRUE, asTibble = TRUE, pars = prm)
 
+
+```
+
+## Solving without a solver: implementing elementary stochastic search algorithm  
+
+The code below represents a basic stochastic search algorithm, capable enough to solve DICE model in several minutes. Current version finds DICE baseline, but it can easily handle any types of constrains on variables. 
+
+```{r Stochastic_Search, eval=FALSE, include=FALSE}
+
+x0 <- x_start
+x.lo <- c(MIU.lo, S.lo)
+x.up <- c(MIU.up, S.up)
+niter1 <- 10
+niter2 <- 25
+plt()
+points(x0, col = "grey", type = "l", lwd = 3)
+(y <- fOBJ(x0))
+x <- x0
+
+for (nj in 1:niter1) {
+  if (nj==1) message(paste0("Obj(x0) = ", y, ", N_iter = 0"))
+  for (ni in 1:niter2) {
+    for (i in 1:(2*NT)) {
+      # propose a candidate for x[i] 
+      xi <- rnorm(1, x[i], 0.01)
+      # check if the candidate is within boundaries
+      if (xi > x.up[i]) xi <- x.up[i]
+      if (xi < x.lo[i]) xi <- x.lo[i]
+      # calculate new value of objective
+      x.cand <- x
+      x.cand[i] <- xi
+      yi <- fOBJ(x.cand)
+      if (is.na(yi) | is.nan(yi)) yi <- Inf
+      # check if the new candidate improves the obj. value
+      # (check of limits on variables can be added here)
+      if(yi < y) {
+        x <- x.cand
+        y <- yi
+      }
+    }
+  }
+  message(paste0("Obj = ", yi, ", N_iter = ", nj*niter2*NT))
+  points(x, col = sample(1:12,1), type = "l", lwd = 1)
+}
+
+plt()
+points(x0, col = "blue", type = "l", lwd = 3)
+points(ss1$par, col = "green", type = "l", lwd = 2)
+points(x, col = "red", type = "l", lwd = 2)
+
+sts <- fOBJ(x, ALL = TRUE, asTibble = TRUE, pars = prm)
 
 ```
 
@@ -1211,13 +1263,13 @@ ggdice <- function(scen = list(),
   
   a <- ggplot(dd, aes_(x = as.name(x), y = as.name(yval)))
   if (geom == "line") a <- a + geom_line(aes(color = Scenario, linetype = Scenario), size = 1)
-  a <- a + labs(x = "", y = yUnit, title = paste0(yDescr, ", (", y, ")"))
+  a <- a + labs(x = "", y = yUnit, title = paste0(yDescr, " (", y, ")"))
   a + theme(plot.title = element_text(hjust = 0.5))
 }
 
 ```
 
-```{r Compare_Scenarios, eval=TRUE, include=TRUE}
+```{r Compare_Scenarios, eval=TRUE, include=TRUE, fig.height = 4, fig.width=6}
 # Store scenarios' results in list-object
 scn <- list("Optimal" = bb,
             "Hotteling" = hot,
@@ -1225,7 +1277,7 @@ scn <- list("Optimal" = bb,
             "Limit 2.33C" = t233dc)
 
 ggdice(scen = scn, y = "TATM")
-ggdice(scen = scn, y = "TATM", select_t = seq(2015, 2200, by = 5))
+ggdice(scen = scn, y = "TATM", select_t = 2015:2200)
 ggdice(scen = scn, y = "TOCEAN")
 ggdice(scen = scn, y = "MU")
 ggdice(scen = scn, y = "ML")
@@ -1237,8 +1289,8 @@ ggdice(scen = scn, y = "DAMFRAC")
 ggdice(scen = scn, y = "ABATECOST")
 ggdice(scen = scn, y = "MCABATE")
 
-ggdice(scen = scn, y = "MIU", select_t = seq(2015, 2600, by = 5))
-ggdice(scen = scn, y = "MIU", select_t = seq(2015, 2200, by = 5))
+ggdice(scen = scn, y = "MIU")
+ggdice(scen = scn, y = "MIU", select_t = 2015:2200)
 ggdice(scen = scn, y = "E")
 ggdice(scen = scn, y = "MAT")
 ggdice(scen = scn, y = "FORC")
