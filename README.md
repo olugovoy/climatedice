@@ -35,6 +35,8 @@ The problem of maximization of a welfare can be seen as a maximization of statis
 ## DICE in C++ and Fortran
 The benefits of translating the model to lower level C++ and Fortran is potential improvement of time-performance. Luckily both languages are easy integrate with R, and manage input-output from R. (forthcoming)
 
+## DICE-OLG
+Overlapping generation (OLG) version of growth model provide several features vs. infinitly lived agent (ILA) framework. The solusion strategy differs, and it is harder to solve such model in GAMS then ad-hoc solution. The OLG version is implemented in R and will be published soon. 
 
 ## Comparative runs of different software versions of DICE model
 (forthcoming)
