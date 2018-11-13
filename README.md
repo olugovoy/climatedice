@@ -5,8 +5,8 @@
 [Dynamic Integrated Climate-Economy (DICE)](https://en.wikipedia.org/wiki/DICE_model) model by [William Nordhaus](http://www.econ.yale.edu/~nordhaus/homepage/homepage.htm) is one of the mainstream Integrated Assessment Models (IAMs) for evaluation of *optimal* climate policy under certain assumptions. Despite its simplicity, DICE is broadly used and cited in climate change economics discussions. The model is a very helpful starting point to understand relations between climate change, economy, and policy with very long run effects.
 
 
-<a title="By WolfgangRieger [Public domain], via Wikimedia Commons" href="https://commons.wikimedia.org/wiki/File%3APompeii_-_Osteria_della_Via_di_Mercurio_-_Dice_Players.jpg"><center><img width="512" alt="Pompeii - Osteria della Via di Mercurio - Dice players" src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Pompeii_-_Osteria_della_Via_di_Mercurio_-_Dice_Players.jpg/512px-Pompeii_-_Osteria_della_Via_di_Mercurio_-_Dice_Players.jpg"/></div> <div class="caption"></center></div>
-<figcaption><center>Fig.1 Dice Players (Pompeii, wall-painting).</figcaption>
+<a title="By WolfgangRieger [Public domain], via Wikimedia Commons" href="https://commons.wikimedia.org/wiki/File%3APompeii_-_Osteria_della_Via_di_Mercurio_-_Dice_Players.jpg"><center><img width="512" alt="Pompeii - Osteria della Via di Mercurio - Dice Players" src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Pompeii_-_Osteria_della_Via_di_Mercurio_-_Dice_Players.jpg/512px-Pompeii_-_Osteria_della_Via_di_Mercurio_-_Dice_Players.jpg"/></div> <div class="caption"></center></div>
+<figcaption><center>Fig.1 Dice players (Pompeii, wall-painting).</figcaption>
 </a><left>
 
 ## Motivation
@@ -30,7 +30,7 @@ The second version of R code (*forthcoming*) is an R-package-style with all mech
 (forthcoming)
 
 ## DICE in BUGS language
-The problem of maximization of a welfare can be seen as a maximization of statistical likelihood function subject to unknown parameters (the savings and emissions control rate in DICE). Therefore, the model can be rewritten and solved with standard Bayesian statistics packages like BUGS, WinBUGS, OpenBUGS, JAGS, and others. Per my testing, the convergence of the optimal DICE scenario takes from one to several minutes in JAGS (http://mcmc-jags.sourceforge.net/), running it from R with  and provides identical to other solvers solution. The code of the translated DICE2016 model in BUGS language is saved in "jags" folder.
+The problem of maximization of a welfare can be seen as a maximization of statistical likelihood function subject to unknown parameters (the savings and emissions control rate in DICE). Therefore, the model can be rewritten and solved with standard Bayesian statistics packages like BUGS, WinBUGS, OpenBUGS, JAGS, and others. Per my testing, the convergence of the optimal DICE scenario takes from one to several minutes in JAGS (http://mcmc-jags.sourceforge.net/), running it from R with  and provides identical to other solvers solution. The code of the translated DICE2016 model in BUGS language is saved in "BUGS" folder.
 
 ## DICE in C++ and Fortran
 The benefits of translating the model to lower level C++ and Fortran is potential improvement of time-performance. Luckily both languages are easy integrate with R, and manage input-output from R. (forthcoming)
