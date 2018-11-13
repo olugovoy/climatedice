@@ -1,0 +1,235 @@
+---
+title: "DICE2016 in JAGS"
+author: "OL"
+date: "11/13/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r rjags}
+library(rjags)
+
+if (T) {
+model_string <- "model{
+# Likelihood == Objective
+#OBJ ~ dnorm(UTILITY, tau_obj) # assuming max of UTILITY is <= OBJ_data
+OBJ ~ dnorm(UTILITY, 100) 
+
+  K[1] <- k0
+  CCA[1] <- 400
+  MAT[1] <- mat0
+  ML[1] <- ml0
+  MU[1] <- mu0
+  TATM[1] <- tatm0
+  TOCEAN[1] <- tocean0
+  
+#  for(j in 1:kit) {
+#    t2xco2 <- t2xco2_s[j]
+    
+  for (i in 1:(NT-1)) {
+    #K[i] <- fK(I = I, tt = i, K = K)
+    K[i+1] <- max(0, (1-dk)**tstep * K[i] + tstep * I[i])
+    #YGROSS[i] <- fYGROSS(K = K, tt = i)
+    YGROSS[i] <-  al[i] * ((l[i]/1000)^(1-gama)) * K[i]^gama
+    #EIND[i] <- fEIND(YGROSS = YGROSS, MIU = MIU, tt = i)
+    EIND[i] <- sigma[i] * YGROSS[i] * (1 - MIU[i]) 
+    #E[i] <- fE(EIND = EIND, tt = i, dE = dE[i])
+    E[i] <- EIND[i] + etree[i] #+ dE
+    #CCA[i] <- fCCA(EIND, tt = i, CCA = CCA)
+    CCA[i+1] <- CCA[i] + EIND[i] * 5 / 3.666
+    #CCATOT[i] <- fCCATOT(CCA = CCA, tt = i)
+    CCATOT[i] <- CCA[i] + cumetree[i]
+    #MAT[i] <- fMAT(MU = MU, E = E, tt = i, MAT = MAT)
+    MAT[i+1] <- MAT[i]*b11 + MU[i]*b21 + E[i] * 5 / 3.666
+    #ML[i] <- fML(MU = MU, tt = i, ML = ML)
+    ML[i+1] <- ML[i]*b33  + MU[i]*b23
+    #MU[i] <- fMU(MAT, ML, tt = i, MU = MU)
+    MU[i+1] <- MAT[i]*b12 + MU[i]*b22 + ML[i]*b32
+    #FORC[i] <- fFORC(MAT, tt = i)
+    FORC[i] <- fco22x * log(MAT[i]/588.000)/log(2) + forcoth[i]
+    #TATM[i] <- fTATM(FORC = FORC, TOCEAN, tt = i, TATM = TATM)
+    TATM[i+1] <- TATM[i] + c1 * (FORC[i+1] - (fco22x/t2xco2) * TATM[i] - c3 * (TATM[i] - TOCEAN[i]))
+    # Penalty for exciding boundary:
+    ## penTATM[i+1] <- step(TATM[i+1] - 3) * abs(TATM[i+1] - 3)
+
+    #TOCEAN[i] <- fTOCEAN(TATM = TATM, tt = i, TOCEAN = TOCEAN) 
+    TOCEAN[i+1] <- TOCEAN[i] + c4*(TATM[i]-TOCEAN[i])
+    #DAMFRAC[i] <- fDAMFRAC(TATM = TATM, tt = i)
+    DAMFRAC[i] <- a1*TATM[i] + a2*TATM[i]**a3
+    #DAMAGES[i] <- fDAMAGES(YGROSS, DAMFRAC, tt = i)
+    DAMAGES[i] <- YGROSS[i] * DAMFRAC[i]
+    #ABATECOST[i] <- fABATECOST(YGROSS, MIU, tt = i)
+    ABATECOST[i] <- YGROSS[i] * cost1[i] * MIU[i]**expcost2
+    #MCABATE[i] <- fMCABATE(MIU, tt = i) 
+    MCABATE[i] <- pbacktime[i] * MIU[i]**(expcost2-1)
+    #CPRICE[i] <- fCPRICE(MIU, tt = i)
+    #YNET[i] <- fYNET(YGROSS, DAMFRAC, tt = i)
+    YNET[i] <- YGROSS[i] * (1 - DAMFRAC[i])
+    #Y[i] <- fY(YNET, ABATECOST, tt = i)
+    Y[i] <- YNET[i] - ABATECOST[i]
+    #I[i] <- fI(S, Y, tt = i)
+    I[i] <- S[i] * Y[i]
+    #C[i] <- fC(Y, I, tt = i)
+    C[i] <- Y[i] - I[i]
+    #CPC[i] <- fCPC(C, tt = i)
+    CPC[i] <- 1000 * C[i] / l[i]
+    #RI[i-1] <- fRI(CPC, tt = i-1)
+    #PERIODU[i] <- fPERIODU(C, tt = i)
+    PERIODU[i] <- ((C[i]*1000/l[i])**(1-elasmu) - 1) / (1 - elasmu) - 1
+    #CEMUTOTPER[i] <- fCEMUTOTPER(PERIODU, tt = i)
+    CEMUTOTPER[i] <- PERIODU[i] * l[i] * rr[i]
+  }
+
+  YGROSS[NT] <-  al[NT] * ((l[NT]/1000)^(1-gama)) * K[NT]^gama
+  EIND[NT] <- sigma[NT] * YGROSS[NT] * (1 - MIU[NT]) 
+  E[NT] <- EIND[NT] + etree[NT] + dE
+  CCATOT[NT] <- CCA[NT] + cumetree[NT]
+  FORC[NT] <- fco22x * log(MAT[NT]/588.000)/log(2) + forcoth[NT]
+  DAMFRAC[NT] <- a1*TATM[NT] + a2*TATM[NT]**a3
+  DAMAGES[NT] <- YGROSS[NT] * DAMFRAC[NT]
+  ABATECOST[NT] <- YGROSS[NT] * cost1[NT] * MIU[NT]**expcost2
+  #MCABATE[NT] <- pbacktime[NT] * MIU[NT]**(expcost2-1)
+  #CPRICE[NT] <- fCPRICE(MIU, tt = i)
+  YNET[NT] <- YGROSS[NT] * (1 - DAMFRAC[NT])
+  Y[NT] <- YNET[NT] - ABATECOST[NT]
+  I[NT] <- S[NT] * Y[NT]
+  C[NT] <- Y[NT] - I[NT]
+  CPC[NT] <- 1000 * C[NT] / l[NT]
+  #RI[i-1] <- fRI(CPC, tt = i-1)
+  PERIODU[NT] <- ((C[NT]*1000/l[NT])**(1-elasmu) - 1) / (1 - elasmu) - 1
+  CEMUTOTPER[NT] <- PERIODU[NT] * l[NT] * rr[NT]
+  ## sumPenTATM <- sum(penTATM[2:NT])
+  
+  UTILITY <- tstep * scale1 * sum(CEMUTOTPER[1:NT]) + scale2 ## - 1000 * sumPenTATM
+  #}
+  
+  # Priors
+  #clmsens ~ dlnorm(log(3.), 1/.2/2)
+  #t2xco2 <- clmsens
+  MIU[1] <- dMIU[1]
+  dMIU[1] ~ dunif(miu_lo[1], miu_up[1])
+  #MIU_tau[1] ~ dgamma(1, 1)
+  S[1] ~ dunif(s_lo[1], s_up[1])
+  # Random walk priors
+  for (i in 2:NT) {
+    # MIU[i] ~ dnorm(1, MIU_tau[i]) T(miu_lo[i], miu_up[i])
+    # MIU_tau[i] ~ dgamma(1, 1)
+    # MIU[i] ~ dnorm(MIU[i-1], MIU_tau/rr[i]/rr[i]) T(miu_lo[i], miu_up[i])
+    MIU[i] <- min(max(MIU[i-1] + dMIU[i], miu_lo[i]), miu_up[i])
+    dMIU[i] ~ dnorm(0, MIU_tau/rr[i]) #T(MIU[i-1] - miu_lo[i], miu_up[i] - MIU[i-1])
+    #S[i] ~ dnorm(S[i-1], S_tau) T(s_lo[i], s_up[i])
+    # MIU[i] ~ dunif(miu_lo[i], miu_up[i])
+    # S[i] ~ dunif(s_lo[i], s_up[i])
+    # MIU[i] ~ dnorm(MIU_mean[i], MIU_tau) T(miu_lo[i], miu_up[i])
+    # S[i] ~ dnorm(S_mean[i], S_tau) T(s_lo[i], s_up[i])
+    # MIU[i] ~ dnorm(1, MIU_tau[i]) T(miu_lo[i], miu_up[i])
+    S[i] ~ dnorm(S[i-1], S_tau/rr[i]) T(s_lo[i], s_up[i])
+    # MIU_beta[i] ~ dbeta(, MIU_tau[i])
+  }
+  tau_obj ~ dgamma(0.01, 0.01)
+  # S_tau ~ dgamma(1, 1)
+  S_tau <- .1
+  # MIU_tau ~ dgamma(1, 1)
+  MIU_tau <- .1
+  
+}"
+
+load("data/DICE2016_parameters.RData")
+dat <- prm
+dat$miu_lo <- MIU.lo 
+dat$miu_up <- MIU.up
+ii <- dat$miu_lo == dat$miu_up
+dat$miu_lo[ii] <- dat$miu_lo[ii] * 0.99
+ii <- dat$miu_lo == dat$miu_up
+dat$miu_up[ii] <- dat$miu_up[ii] * 1.01
+dat$s_lo <- S.lo 
+dat$s_up <- S.up
+ii <- dat$s_lo == dat$s_up
+dat$s_lo[ii] <- dat$s_lo[ii] * (1 - 1e-2)
+ii <- dat$s_lo == dat$s_up
+dat$s_lo[ii] <- dat$s_lo[ii] * (1 + 1e-2)
+dat$NT <- NT
+dat$dE <- 0
+#dat$kit <- 11
+#dat$OBJ <- rep(5000, dat$kit) 
+dat$OBJ <- 5000 #4518
+#dat$miu_up[1] <- 1
+}
+
+#dat$t2xco2 <- NULL
+#dat$t2xco2 <- (qlnorm(seq(.05, .95, length.out = 11), log(3.03), .24))
+#dMIU_start <- MIU_start - lag(MIU_start)
+#dMIU_start[1] <- MIU_start[1]
+
+model <- jags.model(textConnection(model_string), 
+                    data = dat, 
+                    # inits = list(S = S_start_upd, MIU = MIU_start_upd),
+                    #inits = list(dMIU = dMIU_start, S = S_start),
+                    #inits = list(MIU = MIU_start, S = S_start),
+                    #inits = list(MIU = ss1$par[1:NT], S = ss1$par[101:200]),
+                    n.chains = 1, n.adapt= 1e2)
+update(model, 2e3); # Burnin for 10000 samples
+mcmc_samples <- coda.samples(model, thin = 20, n.iter=1e3,
+                             variable.names=c("UTILITY", "OBJ", "MIU", "S", "TATM",
+                                              #"tau_obj", #"clmsens",
+                                              "dMIU",
+                                              "S_tau", "MIU_tau"))
+
+# mcmc_samples
+# names(mcmc_samples[[1]])
+# dim(mcmc_samples)
+# class(mcmc_samples)
+# length(mcmc_samples)
+# summary(mcmc_samples)
+# dim(mcmc_samples[[1]])
+# dimnames(mcmc_samples[[1]])
+hist(mcmc_samples[[1]][,"UTILITY"])
+class(mcmc_samples[[1]][,"UTILITY"])
+
+library(coda)
+plot(mcmc_samples[[1]][,"UTILITY"])
+plot(mcmc_samples[[1]][,"S_tau"])
+plot(mcmc_samples[[1]][,"MIU_tau"])
+#plot(mcmc_samples[[1]][,"tau_obj"])
+plot(mcmc_samples[[1]][,"MIU[2]"])
+plot(mcmc_samples[[1]][,"MIU[3]"])
+plot(mcmc_samples[[1]][,"MIU[5]"])
+plot(mcmc_samples[[1]][,"MIU[10]"])
+plot(mcmc_samples[[1]][,"MIU[20]"])
+plot(mcmc_samples[[1]][,"MIU[30]"])
+#plot(mcmc_samples[[1]][,"clmsens"])
+#summary(mcmc_samples[[1]][,"clmsens"])
+
+mius <- paste0("MIU[",1:100,"]")
+savs <- paste0("S[",1:100,"]")
+tatms <- paste0("TATM[",1:100,"]")
+
+ch <- 1
+# ch <- 2
+# ch <- 3
+dm <- dim(mcmc_samples[[ch]])
+nn <- dm[1]
+
+ms <- (mcmc_samples[[ch]][nn, mius])
+sv <- (mcmc_samples[[ch]][nn, savs])
+ta <- (mcmc_samples[[ch]][nn, tatms])
+plot(ta, type = "l")
+abline(h=3)
+points(ta, type = "l")
+
+
+plt()
+# points(ss1$par, col = "blue", type = "l", lwd = 3)
+points(ms, type = "l", col = "blue")
+points(101:200, sv, type = "l", col = "red")
+
+# mcmc_samples0 <- mcmc_samples
+# MIU_start_upd <- ms
+# S_start_upd <- sv
+
+```
+

@@ -251,8 +251,8 @@ if (F) {
   prm <- sapply(pars, function(x) get(x, envir = as.environment(1)))  
   names(prm)
   prm["t"]
-  # save(list = ls(), file = "/Users/OL/Documents/Julia/DICE2016_params.rda")
-  save(pars, file = "/Users/OL/Documents/Julia/DICE2016_params.rda")
+  # save(list = ls(), file = "Julia/DICE2016_params.rda")
+  save(pars, file = "Julia/DICE2016_params.rda")
 
 }
 
@@ -470,7 +470,7 @@ fCPRICE <- function(MIU, tt = NULL) {
   if (is.null(tt)) {
     pbacktime * (MIU)**(expcost2-1)
   }else{
-      pbacktime[tt] * (MIU[tt])**(expcost2-1)
+    pbacktime[tt] * (MIU[tt])**(expcost2-1)
   }
 }
 
@@ -908,6 +908,7 @@ plt <- function(lower = c(MIU.lo, S.lo), upper = c(MIU.up, S.up)) {
   # points(int07.up, col = "red", type = "l", lty = 2)
 }
 #plt()
+save(prm, file = "data/DICE2016_parameters.RData")
 
 ```
 
@@ -1076,7 +1077,7 @@ cfun <- function(X, TATM.UP = NULL, CCATOT.UP = NULL) {
 confun <- function(X) cfun(X, TATM.UP = 3)
 
 system.time(
-  # 
+  # 5-10 mins
   ss3 <- NlcOptim::solnl(
     X = ss2$par, 
     objfun = fOBJ, 
@@ -1143,10 +1144,10 @@ system.time(
   # 5-10 mins
   ss5 <- NlcOptim::solnl(
     #X = c(rep(0, NT), ss2$par[(NT+1):(2*NT)]),
-    X = ss2$par,
+    X = ss1$par,
     objfun = fOBJ,
     confun = confun,
-    lb = c(rep(1e-10,NT), ss2$par[(NT+1):(2*NT)]),
+    lb = c(rep(1e-10,NT), ss1$par[(NT+1):(2*NT)]),
     # ub = ub_nofx,
     ub = ub_nofx1,
     maxIter = 1e3,
