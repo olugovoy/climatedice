@@ -27,7 +27,7 @@ The second version of R code (*forthcoming*) is an R-package-style with all mech
 [Julia](https://julialang.org/) is a modern high-level programming language for numerical computing with the main focus on performance, and offers ergonomic, compact coding style. With [JuMP](https://github.com/JuliaOpt/JuMP.jl) package and [IPOPT](https://projects.coin-or.org/Ipopt) open-source solver (embedded in [Ipopt](https://github.com/JuliaOpt/Ipopt.jl) package for *Julia*), the translation from GAMS is pretty straightforward. This version of DICE2016 in Julia is tested with [JuliaPro v06.2.1 Personal](https://juliacomputing.com/products/juliapro.html) assembly, and produces identical results with GAMS version for baseline scenario (others are not tested).
 
 ## DICE in Python
-(forthcoming)
+A Python version of DICE2016 (by Hazem Krichene, who followed the [R-version](https://github.com/olugovoy/climatedice/blob/master/R/DICE2016inR_standalone.Rmd) strategy to solve the model), is available here: https://github.com/hazem2410.  
 
 ## DICE in BUGS language
 The problem of maximization of a welfare can be seen as a maximization of statistical likelihood function subject to unknown parameters (the savings and emissions control rate in DICE). Therefore, the model can be rewritten and solved with standard Bayesian statistics packages like BUGS, WinBUGS, OpenBUGS, JAGS, and others. Per my testing, the convergence of the optimal DICE scenario takes from one to several minutes in JAGS (http://mcmc-jags.sourceforge.net/), running it from R with  and provides identical to other solvers solution. The code of the translated DICE2016 model in BUGS language is saved in "BUGS" folder.
