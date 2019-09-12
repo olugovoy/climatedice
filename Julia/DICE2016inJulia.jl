@@ -79,7 +79,8 @@ end
 
 using JuMP, Ipopt
 
-dice = Model(solver = IpoptSolver())
+dice = Model()
+
 #if true
 # Declare parameters which can be changes inside the Model
 @NLparameter(dice, rr[i in t] == rr_orig[i])
@@ -148,7 +149,7 @@ dice = Model(solver = IpoptSolver())
 #typeof(K)
 #  kk(t+1)..            K(t+1)         =L= (1-dk)**tstep * K(t) + tstep * I(t);
 @NLconstraint(dice, KK[i in t[1:end-1]], K[i+1] == (1-dk)^tstep * K[i] + tstep * I[i])
-JuMP.fix(K[1], k0)
+##JuMP.fix(K[1], k0; force=true)
 #@NLconstraint(dice, KK0[1], K[1] == k0)
 # cc(t)..  C(t)           =E= Y(t) - I(t)
 @NLconstraint(dice, CC[i in t], C[i] == Y[i] - I[i])
@@ -168,7 +169,7 @@ JuMP.fix(K[1], k0)
 @NLconstraint(dice, EINDEQ[i in t], EIND[i] == sigma[i] * YGROSS[i] * (1-(MIU[i])))
 #ccacca(t+1)..        CCA(t+1)       =E= CCA(t)+ EIND(t)*5/3.666;
 @NLconstraint(dice, CCACCA[i in t[1:end-1]], CCA[i+1] == CCA[i] + EIND[i] * 5/3.666)
-JuMP.fix(CCA[1], 400.)
+##JuMP.fix(CCA[1], 400.; force= true)
 #@NLconstraint(dice, CCACCA0[1], CCA[1] == 400)
 # ccatoteq(t)..        CCATOT(t)      =E= CCA(t)+cumetree(t);
 @NLconstraint(dice, CCATOTEQ[i in t], CCATOT[i] == CCA[i] + cumetree[i])
@@ -186,24 +187,24 @@ JuMP.fix(CCA[1], 400.)
 @NLconstraint(dice, CARBPRICEEQ[i in t], CPRICE[i] == pbacktime[i] * (MIU[i]^expcost2))
 # mmat(t+1)..          MAT(t+1)       =E= MAT(t)*b11 + MU(t)*b21 + (E(t)*(5/3.666));
 @NLconstraint(dice, MMAT[i in t[1:end-1]], MAT[i+1] == MAT[i]*b11 + MU[i]*b21 + E[i] * 5/3.666)
-JuMP.fix(MAT[1], mat0)
+##JuMP.fix(MAT[1], mat0;force=true)
 #@NLconstraint(dice, MMAT0[1], MAT[1] == mat0)
 # mml(t+1)..           ML(t+1)        =E= ML(t)*b33  + MU(t)*b23;
 @NLconstraint(dice, MML[i in t[1:end-1]], ML[i+1] == ML[i]*b33 + MU[i]*b23)
-JuMP.fix(ML[1], ml0)
+##JuMP.fix(ML[1], ml0;force=true)
 #@NLconstraint(dice, MML0[1], ML[1] == ml0)
 # mmu(t+1)..           MU(t+1)        =E= MAT(t)*b12 + MU(t)*b22 + ML(t)*b32;
 @NLconstraint(dice, MMU[i in t[1:end-1]], MU[i+1] == MAT[i]*b12 + MU[i]*b22 + ML[i]*b32)
-JuMP.fix(MU[1], mu0)
+##JuMP.fix(MU[1], mu0;force=true)
 #@NLconstraint(dice, MMU0[1], MU[1] == mu0)
 # tatmeq(t+1)..        TATM(t+1)      =E= TATM(t) + c1 * ((FORC(t+1)-(fco22x/t2xco2)*TATM(t))-(c3*(TATM(t)-TOCEAN(t))));
 @NLconstraint(dice, TATMEQ[i in t[1:end-1]], TATM[i+1] == TATM[i] +
                 c1 * ((FORC[i+1]-(fco22x/t2xco2)*TATM[i])-(c3*(TATM[i]-TOCEAN[i]))))
-JuMP.fix(TATM[1], tatm0)
+##JuMP.fix(TATM[1], tatm0;force=true)
 #@NLconstraint(dice, TATM0[1], TATM[1] == tatm0)
 # toceaneq(t+1)..      TOCEAN(t+1)    =E= TOCEAN(t) + c4*(TATM(t)-TOCEAN(t));
 @NLconstraint(dice, TOCEANEQ[i in t[1:end-1]], TOCEAN[i+1] == TOCEAN[i] + c4*(TATM[i]-TOCEAN[i]))
-JuMP.fix(TOCEAN[1], tocean0)
+##JuMP.fix(TOCEAN[1], tocean0;force=true)
 #@NLconstraint(dice, TOCEANEQ0[1], TOCEAN[1] == tocean0)
 # yneteq(t)..          YNET(t)        =E= YGROSS(t)*(1-damfrac(t));
 @NLconstraint(dice, YNETEQ[i in t], YNET[i] == YGROSS[i] * (1-DAMFRAC[i]))
@@ -214,11 +215,11 @@ JuMP.fix(TOCEAN[1], tocean0)
 #setvalue(RI2[100], .01)
 #rieq(t+1)..          RI(t)          =E= (1+prstp) * (CPC(t+1)/CPC(t))**(elasmu/tstep) - 1;
 @NLconstraint(dice, RIEQ[i in t[1:end-1]], RI[i] == (1+prstp) * (CPC[i+1]/CPC[i])^(elasmu/tstep) - 1)
-JuMP.fix(RI[t[end]], .01)
+##JuMP.fix(RI[t[end]], .01;force=true)
 #@NLconstraint(dice, RIEQ[i in t[1:end-1]], RI[i] == 0.5)
 # MIU constrains
 #@NLconstraint(dice, MIU0[1], MIU[1] == miu0)
-JuMP.fix(MIU[1], miu0)
+##JuMP.fix(MIU[1], miu0;force=true)
 #@NLconstraint(dice, MIU1[i in t[1:30]], MIU[i] <= 1)
 #@NLconstraint(dice, MIU2[i in t], MIU[i] <= 1.2)
 @NLconstraint(dice, MIU1[i in t], MIU[i] <= miu_up[i])
@@ -232,15 +233,16 @@ JuMP.fix(MIU[1], miu0)
 #end
 #println("done")
 # Try to solve DICE roughly
-setsolver(dice, IpoptSolver(tol = 0.1,
-                            print_level = 5,
-                            print_frequency_iter = 250,
-                            start_with_resto = "yes",
-                            expect_infeasible_problem = "yes",
-                            max_iter = 5000))
+optimize!(dice, with_optimizer(Ipopt.Optimizer,
+                               tol = 0.1,
+                               print_level = 5,
+                               print_frequency_iter = 250,
+                               start_with_resto = "yes",
+                               expect_infeasible_problem = "yes",
+                               max_iter = 5000
+                               ))
 
-dice_status = solve(dice)
-dice_status = solve(dice)
+
 println("UTILITY = ", getobjectivevalue(dice), ", $dice_status")
 
 # Try to resolve if solution is not Optimal
